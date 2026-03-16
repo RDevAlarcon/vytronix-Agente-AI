@@ -85,6 +85,24 @@ body > * {
   z-index: 9999 !important;
 }
 
+.ai-chat-toggle-fixed {
+  position: fixed !important;
+  right: 1.25rem !important;
+  bottom: 6rem !important;
+  left: auto !important;
+  top: auto !important;
+  z-index: 9999 !important;
+}
+
+.ai-chat-panel-fixed {
+  position: fixed !important;
+  right: 1.25rem !important;
+  bottom: 10.25rem !important;
+  left: auto !important;
+  top: auto !important;
+  z-index: 9999 !important;
+}
+
 /* Logo helpers */
 
 

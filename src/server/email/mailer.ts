@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+﻿import nodemailer from "nodemailer";
 
 type SendResult = { ok: true } | { ok: false; error: unknown };
 
@@ -9,7 +9,7 @@ export async function sendPasswordResetEmail(to: string, link: string): Promise<
 
   if (!apiKey) {
     // Dev fallback: log the link instead of sending
-    console.log(`[DEV] Email a ${to} — ${link}`);
+    console.log(`[DEV] Email a ${to} â€” ${link}`);
     return { ok: true };
   }
 
@@ -23,9 +23,9 @@ export async function sendPasswordResetEmail(to: string, link: string): Promise<
       body: JSON.stringify({
         from,
         to,
-        subject: "Restablecer tu contraseña",
+        subject: "Restablecer tu contraseÃ±a",
         html: emailHtml(link),
-        text: `Usa este enlace para restablecer tu contraseña: ${link}`,
+        text: `Usa este enlace para restablecer tu contraseÃ±a: ${link}`,
       }),
     });
     if (!res.ok) {
@@ -46,10 +46,10 @@ export async function sendPasswordResetEmail(to: string, link: string): Promise<
 function emailHtml(link: string) {
   return `
   <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.6;color:#111">
-    <h2>Restablecer contraseña</h2>
-    <p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace:</p>
+    <h2>Restablecer contraseÃ±a</h2>
+    <p>Has solicitado restablecer tu contraseÃ±a. Haz clic en el siguiente enlace:</p>
     <p><a href="${link}">${link}</a></p>
-    <p style="color:#555;font-size:12px">El enlace expira en 1 hora. Si no fuiste tú, ignora este mensaje.</p>
+    <p style="color:#555;font-size:12px">El enlace expira en 1 hora. Si no fuiste tÃº, ignora este mensaje.</p>
   </div>`;
 }
 
@@ -65,8 +65,8 @@ export async function sendContactNotificationEmail(input: {
     return { ok: true };
   }
 
-  const subject = `Nueva solicitud de contacto de ${input.name}`;
-  const text = `Nueva solicitud en el sitio Vytronix:\n\nNombre: ${input.name}\nEmail: ${input.email}\nTeléfono: ${input.phone}\n\nMensaje:\n${input.message}`;
+  const subject = `Nuevo lead AI - ${input.name}`;
+  const text = `Nuevo lead desde chat asistido de Vytronix:\n\nNombre: ${input.name}\nEmail: ${input.email}\nTelefono: ${input.phone}\n\nDetalle:\n${input.message}`;
   const html = contactHtml(input);
 
   return sendSmtpEmail({
@@ -85,12 +85,15 @@ export async function sendContactNotificationEmail(input: {
 function contactHtml({ name, email, phone, message }: { name: string; email: string; phone: string; message: string }) {
   return `
   <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.6;color:#111">
-    <h2>Nueva solicitud de contacto</h2>
-    <p><strong>Nombre:</strong> ${name}</p>
-    <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
-    <p><strong>Teléfono:</strong> <a href="tel:${phone}">${phone}</a></p>
-    <p><strong>Mensaje:</strong></p>
-    <blockquote style="border-left:4px solid #ddd;padding-left:12px;color:#444">${message.replace(/\n/g, '<br/>')}</blockquote>
+    <h2 style="margin:0 0 12px">Nuevo lead desde chat asistido</h2>
+    <p style="margin:0 0 6px"><strong>Nombre:</strong> ${name}</p>
+    <p style="margin:0 0 6px"><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+    <p style="margin:0 0 14px"><strong>WhatsApp:</strong> <a href="tel:${phone}">${phone}</a></p>
+    <div style="padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb">
+      <p style="margin:0 0 8px"><strong>Resumen comercial</strong></p>
+      <div style="color:#374151">${message.replace(/\n/g, '<br/>')}</div>
+    </div>
+    <p style="margin-top:14px;color:#4b5563">Accion sugerida: contactar al lead en menos de 15 minutos.</p>
   </div>`;
 }
 
@@ -108,7 +111,7 @@ export async function sendPaymentNotificationEmail(input: {
   }
 
   const subject = `Pago aprobado (${input.paymentId})`;
-  const text = `Se registró un pago aprobado en Vytronix:\n\nID Pago: ${input.paymentId}\nEstado: ${input.status}\nMonto: ${input.amount} ${input.currency}\nEmail usuario: ${input.userEmail}`;
+  const text = `Se registrÃ³ un pago aprobado en Vytronix:\n\nID Pago: ${input.paymentId}\nEstado: ${input.status}\nMonto: ${input.amount} ${input.currency}\nEmail usuario: ${input.userEmail}`;
   const html = paymentHtml(input);
 
   return sendSmtpEmail({
@@ -118,6 +121,83 @@ export async function sendPaymentNotificationEmail(input: {
     html,
     context: "Payment notification",
   });
+}
+
+export async function sendClientProposalEmail(input: {
+  toEmail: string;
+  service: string;
+  estimatedPrice: string;
+  totalEstimate?: string;
+  summary: string;
+  nextSteps: string[];
+}): Promise<SendResult> {
+  const to = input.toEmail.trim();
+  if (!to) {
+    return { ok: true };
+  }
+
+  const subject = `Propuesta inicial Vytronix | ${input.service}`;
+  const text = [
+    `Hola,`,
+    ``,
+    `Gracias por tu interes en Vytronix.`,
+    ``,
+    `Servicio recomendado: ${input.service}`,
+    `Total estimado recomendado: ${input.totalEstimate ?? "Por confirmar"}`,
+    `Rango referencial: ${input.estimatedPrice}`,
+    ``,
+    `Resumen ejecutivo:`,
+    input.summary,
+    ``,
+    `Siguientes pasos:`,
+    ...input.nextSteps.map((step, index) => `${index + 1}. ${step}`),
+    ``,
+    `Si te hace sentido, responde este correo con: "Aprobado" y coordinamos kickoff hoy.`,
+  ].join("\n");
+
+  const html = proposalHtml(input);
+  return sendSmtpEmail({
+    to,
+    subject,
+    text,
+    html,
+    context: "Client proposal email",
+  });
+}
+
+function proposalHtml(input: {
+  toEmail: string;
+  service: string;
+  estimatedPrice: string;
+  totalEstimate?: string;
+  summary: string;
+  nextSteps: string[];
+}) {
+  return `
+  <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.6;color:#111;max-width:680px">
+    <h2 style="margin:0 0 8px">Propuesta inicial Vytronix</h2>
+    <p style="margin:0 0 14px;color:#374151">Gracias por tu interes. Te compartimos un resumen claro para avanzar.</p>
+
+    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin:0 0 12px;background:#f8fafc">
+      <p style="margin:0 0 8px"><strong>Servicio recomendado:</strong> ${input.service}</p>
+      <p style="margin:0 0 8px"><strong>Total estimado recomendado:</strong> ${input.totalEstimate ?? "Por confirmar"}</p>
+      <p style="margin:0"><strong>Rango referencial:</strong> ${input.estimatedPrice}</p>
+    </div>
+
+    <div style="margin:0 0 12px">
+      <p style="margin:0 0 6px"><strong>Resumen ejecutivo</strong></p>
+      <p style="margin:0;color:#374151">${input.summary.replace(/\n/g, "<br/>")}</p>
+    </div>
+
+    <div style="margin:0 0 12px">
+      <p style="margin:0 0 6px"><strong>Siguientes pasos</strong></p>
+      <ol style="margin:0 0 0 18px;padding:0">
+        ${input.nextSteps.map((step) => `<li style="margin:4px 0">${step}</li>`).join("")}
+      </ol>
+    </div>
+
+    <p style="margin:12px 0 0">Si estas de acuerdo, responde este correo con <strong>"Aprobado"</strong> y coordinamos kickoff hoy.</p>
+  </div>`;
 }
 
 function paymentHtml({ userEmail, amount, currency, paymentId, status }: { userEmail: string; amount: number; currency: string; paymentId: string; status: string }) {
@@ -171,3 +251,10 @@ async function sendSmtpEmail(params: {
     return { ok: false, error };
   }
 }
+
+
+
+
+
+
+

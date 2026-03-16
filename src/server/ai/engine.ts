@@ -7,6 +7,7 @@ export type ContactAgentInput = {
   email: string;
   phone: string;
   message: string;
+  conversationContext?: string;
 };
 
 type AgentRunResponse = {
@@ -26,6 +27,11 @@ type AgentRunResponse = {
     code?: string;
     message?: string;
   };
+};
+
+type RunAgentOptions = {
+  timeoutMs?: number;
+  mode?: "fast" | "standard";
 };
 
 const responseSchema = z.object({
@@ -67,6 +73,16 @@ const timeoutFromEnv = (): number => {
     return 120000;
   }
   return Math.trunc(raw);
+};
+
+const normalizeTimeout = (value: number): number => {
+  if (!Number.isFinite(value) || value < 1000) {
+    return 1000;
+  }
+  if (value > 120000) {
+    return 120000;
+  }
+  return Math.trunc(value);
 };
 
 const modeFromEnv = (): "fast" | "standard" => {
@@ -114,8 +130,26 @@ const inferAgentsFromMessage = (message: string): AgentName[] => {
     return ["support"];
   }
 
-  const landingHits = hits(text, ["landing", "landing page", "pagina", "captacion", "conversi"]);
-  const proposalHits = hits(text, ["propuesta", "cotiz", "presupuesto", "precio", "plan", "oferta"]);
+  const landingHits = hits(text, ["landing", "landing page", "pagina", "captacion", "conversi", "sitio web", "ecommerce"]);
+  const proposalHits = hits(text, [
+    "propuesta",
+    "cotiz",
+    "presupuesto",
+    "precio",
+    "plan",
+    "oferta",
+    "integracion",
+    "integración",
+    "api",
+    "apis",
+    "vyaudit",
+    "auditoria web",
+    "auditoría web",
+    "marketing digital",
+    "app movil",
+    "aplicacion movil",
+    "aplicación móvil"
+  ]);
   const leadHits = hits(text, ["lead", "leads", "cliente", "prospecto", "ventas", "reunion"]);
 
   const selected = new Set<AgentName>();
@@ -139,6 +173,21 @@ const extractRequestedServices = (message: string): string[] => {
   if (text.includes("landing")) {
     services.push("Landing de captacion");
   }
+  if (text.includes("sitio web") || text.includes("pagina web") || text.includes("web")) {
+    services.push("Sitio web corporativo o ecommerce");
+  }
+  if (text.includes("app movil") || text.includes("aplicacion movil") || text.includes("aplicación móvil")) {
+    services.push("Desarrollo de app movil");
+  }
+  if (text.includes("integracion") || text.includes("integración") || text.includes("api") || text.includes("apis")) {
+    services.push("Integraciones y APIs");
+  }
+  if (text.includes("vyaudit") || text.includes("auditoria web") || text.includes("auditoría web")) {
+    services.push("VyAudit (auditoria web)");
+  }
+  if (text.includes("marketing digital") || text.includes("ads") || text.includes("campa") || text.includes("publicidad")) {
+    services.push("Marketing digital");
+  }
   if (text.includes("ads") || text.includes("campa") || text.includes("publicidad")) {
     services.push("Ads management");
   }
@@ -151,15 +200,34 @@ const extractRequestedServices = (message: string): string[] => {
   return services;
 };
 
+const composeMessage = (input: ContactAgentInput): string => {
+  const context = input.conversationContext?.trim();
+  if (!context) {
+    return input.message;
+  }
+
+  return `${input.message}\n\nContexto reciente:\n${context}\n\nInstruccion: responde breve y haz solo 1 pregunta clave.`;
+};
+
 const buildLeadInput = (input: ContactAgentInput) => ({
-  leadMessage: input.message,
+  leadMessage: composeMessage(input),
   companyContext: `Contacto web Vytronix. Nombre: ${input.name}. Email: ${input.email}. Telefono: ${input.phone}.`,
-  knownServices: ["Landing pages", "Ads management", "CRM automation", "Web development"]
+  knownServices: [
+    "Landing pages",
+    "Sitios web y ecommerce",
+    "Apps moviles",
+    "Integraciones y APIs",
+    "VyAudit (auditoria web)",
+    "Marketing digital",
+    "Ads management",
+    "CRM automation",
+    "Web development"
+  ]
 });
 
 const buildLandingInput = (input: ContactAgentInput) => ({
   projectName: `Landing para ${input.name}`,
-  objective: input.message,
+  objective: composeMessage(input),
   audience: "Pendiente de discovery",
   offer: "Pendiente de discovery",
   constraints: ["No prometer resultados garantizados"],
@@ -168,7 +236,7 @@ const buildLandingInput = (input: ContactAgentInput) => ({
 
 const buildProposalInput = (input: ContactAgentInput) => ({
   clientName: input.name,
-  businessGoal: input.message,
+  businessGoal: composeMessage(input),
   requestedServices: extractRequestedServices(input.message),
   timeline: "Pendiente de definir",
   budgetRange: "Pendiente de definir",
@@ -176,7 +244,7 @@ const buildProposalInput = (input: ContactAgentInput) => ({
 });
 
 const buildSupportInput = (input: ContactAgentInput) => ({
-  ticketMessage: input.message,
+  ticketMessage: composeMessage(input),
   customerName: input.name,
   accountType: "Unknown",
   productArea: "General",
@@ -214,7 +282,11 @@ export const selectAgentsForContact = (input: ContactAgentInput): AgentName[] =>
   return inferred.slice(0, maxAgents);
 };
 
-export const runAgentForContact = async (agent: AgentName, input: ContactAgentInput): Promise<AgentRunResponse> => {
+export const runAgentForContact = async (
+  agent: AgentName,
+  input: ContactAgentInput,
+  options?: RunAgentOptions
+): Promise<AgentRunResponse> => {
   const baseUrl = getBaseUrl();
   if (!baseUrl) {
     return {
@@ -226,7 +298,7 @@ export const runAgentForContact = async (agent: AgentName, input: ContactAgentIn
     };
   }
 
-  const timeoutMs = timeoutFromEnv();
+  const timeoutMs = normalizeTimeout(options?.timeoutMs ?? timeoutFromEnv());
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -239,7 +311,7 @@ export const runAgentForContact = async (agent: AgentName, input: ContactAgentIn
       },
       body: JSON.stringify({
         agent,
-        mode: modeFromEnv(),
+        mode: options?.mode ?? modeFromEnv(),
         input: buildAgentInput(agent, input)
       }),
       signal: controller.signal

@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 
 type AgentChoice = "auto" | "lead" | "landing" | "proposal" | "support";
 
@@ -11,52 +12,81 @@ type ChatItem = {
 
 type ChatResponse = {
   success: boolean;
-  agent?: string;
+  sessionId?: string;
+  agent?: Exclude<AgentChoice, "auto">;
   reply?: string;
   error?: string;
+  missingInformation?: string[];
 };
 
-const AGENT_OPTIONS: Array<{ value: AgentChoice; label: string }> = [
-  { value: "auto", label: "Auto (recomendado)" },
-  { value: "lead", label: "Lead Agent" },
-  { value: "landing", label: "Landing Agent" },
-  { value: "proposal", label: "Proposal Agent" },
-  { value: "support", label: "Support Agent" }
-];
+const SESSION_KEY = "vytronix_ai_chat_session_id";
 
 export default function AiChatWidget() {
   const [open, setOpen] = useState(false);
-  const [agent, setAgent] = useState<AgentChoice>("auto");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [currentAgent, setCurrentAgent] = useState<Exclude<AgentChoice, "auto">>("lead");
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const [messages, setMessages] = useState<ChatItem[]>([
     {
       role: "assistant",
-      text: "Hola, soy el asistente de Vytronix. Te ayudo con leads, landing pages, propuestas y soporte." 
+      text: "Hola 👋 Soy el asistente de Vytronix. Escribe lo que necesitas y te guío paso a paso."
     }
   ]);
 
-  const canSend = useMemo(() => input.trim().length >= 3 && !sending, [input, sending]);
+  const canSend = useMemo(() => input.trim().length >= 2 && !sending, [input, sending]);
 
-  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  useEffect(() => {
+    const persisted = window.sessionStorage.getItem(SESSION_KEY);
+    if (persisted) {
+      setSessionId(persisted);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (sessionId) {
+      window.sessionStorage.setItem(SESSION_KEY, sessionId);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) {
+      return;
+    }
+    container.scrollTop = container.scrollHeight;
+  }, [messages, sending, open]);
+
+  const sendMessage = async () => {
     if (!canSend) {
       return;
     }
 
     const message = input.trim();
+    const nextHistory = [...messages, { role: "user" as const, text: message }];
+
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", text: message }]);
+    setMessages(nextHistory);
     setSending(true);
 
     try {
       const response = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, agent })
+        body: JSON.stringify({
+          sessionId: sessionId ?? undefined,
+          message,
+          agent: "auto",
+          history: nextHistory.slice(-10).map((item) => ({ role: item.role, text: item.text }))
+        })
       });
 
       const payload = (await response.json().catch(() => null)) as ChatResponse | null;
+      if (payload?.sessionId) {
+        setSessionId(payload.sessionId);
+      }
+
       if (!response.ok || !payload || !payload.success || !payload.reply) {
         const fallback = payload?.error ?? "No pude responder ahora. Intenta nuevamente en unos minutos.";
         setMessages((prev) => [...prev, { role: "assistant", text: fallback }]);
@@ -64,15 +94,23 @@ export default function AiChatWidget() {
       }
 
       const tag = payload.agent ? `[${payload.agent}] ` : "";
+      if (payload.agent) {
+        setCurrentAgent(payload.agent);
+      }
       setMessages((prev) => [...prev, { role: "assistant", text: `${tag}${payload.reply}` }]);
     } catch {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", text: "No hay conexion con el asistente en este momento." }
+        { role: "assistant", text: "No hay conexión con el asistente en este momento." }
       ]);
     } finally {
       setSending(false);
     }
+  };
+
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await sendMessage();
   };
 
   return (
@@ -80,53 +118,66 @@ export default function AiChatWidget() {
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="fixed bottom-20 right-4 z-50 rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg hover:bg-blue-700"
+        className="ai-chat-toggle-fixed rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg hover:bg-blue-700"
         aria-label="Abrir asistente de Vytronix"
       >
         {open ? "Cerrar asistente" : "Asistente AI"}
       </button>
 
       {open ? (
-        <section className="fixed bottom-36 right-4 z-50 w-[360px] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <section className="ai-chat-panel-fixed w-[360px] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white shadow-2xl">
           <header className="border-b border-slate-200 px-4 py-3">
-            <h3 className="text-sm font-semibold text-slate-900">Asistente Vytronix</h3>
-            <p className="text-xs text-slate-600">Respuestas guiadas por agentes especializados.</p>
+            <div className="flex items-center gap-2">
+              <Image
+                src="/avatarasistente.png"
+                alt="Avatar del asistente de Vytronix"
+                width={56}
+                height={56}
+                className="h-14 w-14 rounded-full border border-slate-200 object-cover"
+              />
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Asistente Vytronix</h3>
+                <p className="text-xs text-slate-600">Respuestas guiadas por agentes especializados.</p>
+              </div>
+            </div>
           </header>
 
-          <div className="space-y-2 px-3 py-3 max-h-72 overflow-y-auto bg-slate-50">
+          <div ref={messagesContainerRef} className="space-y-2 px-3 py-3 max-h-72 overflow-y-auto bg-slate-50">
             {messages.map((message, idx) => (
-              <div
-                key={`${message.role}-${idx}`}
-                className={
-                  message.role === "user"
-                    ? "ml-8 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white"
-                    : "mr-8 rounded-lg bg-white px-3 py-2 text-sm text-slate-800 border border-slate-200"
-                }
-              >
-                {message.text}
+              <div key={`${message.role}-${idx}`}>
+                {message.role === "user" ? (
+                  <div className="ml-8 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white">{message.text}</div>
+                ) : (
+                  <div className="mr-8 flex items-start gap-2">
+                    <Image
+                      src="/avatarasistente.png"
+                      alt="Avatar del asistente"
+                      width={40}
+                      height={40}
+                      className="mt-0.5 h-10 w-10 rounded-full border border-slate-200 object-cover"
+                    />
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">
+                      {message.text}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
             {sending ? <div className="text-xs text-slate-500">Escribiendo...</div> : null}
           </div>
 
           <form onSubmit={onSubmit} className="border-t border-slate-200 p-3 space-y-2">
-            <label className="text-xs font-medium text-slate-700" htmlFor="agent-choice">Agente</label>
-            <select
-              id="agent-choice"
-              value={agent}
-              onChange={(event) => setAgent(event.target.value as AgentChoice)}
-              className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
-            >
-              {AGENT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-
             <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (canSend) {
+                    void sendMessage();
+                  }
+                }
+              }}
               placeholder="Escribe tu consulta..."
               className="min-h-[80px] w-full resize-y rounded-md border border-slate-300 px-2 py-2 text-sm"
             />
