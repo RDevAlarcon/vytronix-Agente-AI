@@ -11,12 +11,14 @@ export type LandingConversationState = {
   brand?: string;
   visualReference?: string;
   paymentMethod?: string;
+  budget?: string;
   contactEmail?: string;
   contactPhone?: string;
   quoteSent: boolean;
   briefSent: boolean;
   briefClosed: boolean;
   kickoffRequested: boolean;
+  handoffSent: boolean;
   completed: boolean;
 };
 
@@ -35,6 +37,7 @@ const defaultLandingState = (): LandingConversationState => ({
   briefSent: false,
   briefClosed: false,
   kickoffRequested: false,
+  handoffSent: false,
   completed: false
 });
 

@@ -5,7 +5,7 @@ type SendResult = { ok: true } | { ok: false; error: unknown };
 export async function sendPasswordResetEmail(to: string, link: string): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   // Fallback seguro para pruebas si no se define MAIL_FROM
-  const from = process.env.MAIL_FROM || "Vytronix <onboarding@resend.dev>";
+  const from = process.env.MAIL_FROM || process.env.SMTP_FROM || "Vytronix <contacto@vytronix.cl>";
 
   if (!apiKey) {
     // Dev fallback: log the link instead of sending
@@ -224,7 +224,7 @@ async function sendSmtpEmail(params: {
   const pass = process.env.SMTP_PASS;
   const port = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined;
   const secure = process.env.SMTP_SECURE === "true";
-  const from = process.env.MAIL_FROM || (user ? `Vytronix <${user}>` : "Vytronix <no-reply@vytronix.cl>");
+  const from = process.env.MAIL_FROM || process.env.SMTP_FROM || (user ? `Vytronix <${user}>` : "Vytronix <contacto@vytronix.cl>");
 
   if (!host || !user || !pass) {
     console.warn(`[MAIL] ${params.context} skipped: SMTP credentials missing`);
@@ -251,6 +251,8 @@ async function sendSmtpEmail(params: {
     return { ok: false, error };
   }
 }
+
+
 
 
 

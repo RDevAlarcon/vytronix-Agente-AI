@@ -147,33 +147,212 @@ const SERVICE_CATALOG: Record<Exclude<ServiceIntent, "none">, ServiceCatalogEntr
   }
 };
 
+const scoreSignals = (text: string, signals: string[]): number =>
+  signals.reduce((score, signal) => score + (text.includes(signal) ? 1 : 0), 0);
+
+const scoreWordSignals = (text: string, signals: string[]): number =>
+  signals.reduce((score, signal) => score + (hasWord(text, signal) ? 1 : 0), 0);
+
 const detectServiceIntent = (message: string): ServiceIntent => {
   const text = normalize(message);
 
-  if (hasAny(text, ["vyaudit", "auditoria web", "auditoría web", "seo tecnico", "informe pdf"])) {
-    return "vyaudit";
-  }
-  if (hasAny(text, ["ecommerce", "e-commerce", "tienda online", "carrito", "carro de compras", "checkout"])) {
-    return "ecommerce";
-  }
-  if (
-    hasAny(text, ["integracion", "integración", "crm", "webhook", "erp", "pasarela de pago"]) ||
-    hasWord(text, "api") ||
-    hasWord(text, "apis")
-  ) {
-    return "integrations_api";
-  }
-  if (hasAny(text, ["marketing digital", "ads", "campanas", "campañas", "meta ads", "google ads", "contenido"])) {
-    return "marketing_digital";
-  }
-  if (hasAny(text, ["app movil", "aplicacion movil", "aplicación móvil"]) || hasWord(text, "android")) {
-    return "mobile_apps";
-  }
-  if (hasAny(text, ["landing", "landing page", "pagina web", "sitio web", "ecommerce", "tienda online", "web", "ofrecer servicios", "ofrecer mis servicios", "sitio corporativo", "pagina corporativa"])) {
+  if (hasAny(text, ["landing", "landing page"])) {
     return "web_landing";
   }
+  if (hasAny(text, ["ecommerce", "e-commerce", "tienda online", "carrito", "checkout", "carro de compras", "carrito de compras"])) {
+    return "ecommerce";
+  }
+  if (hasAny(text, ["integracion", "integraciones", "integrar pagos", "pasarela de pago", "webhook", "crm", "erp"]) || hasWord(text, "api") || hasWord(text, "apis")) {
+    return "integrations_api";
+  }
+  if (hasAny(text, ["app movil", "aplicacion movil", "app mobile"]) || scoreWordSignals(text, ["ios", "android"]) > 0 || hasWord(text, "app")) {
+    return "mobile_apps";
+  }
+  if (hasAny(text, ["marketing digital", "meta ads", "google ads", "campanas", "campa?as", "redes sociales"])) {
+    return "marketing_digital";
+  }
+  if (hasAny(text, ["vyaudit", "auditoria web", "auditoria de sitio", "seo tecnico", "core web vitals"])) {
+    return "vyaudit";
+  }
 
-  return "none";
+  const scores: Record<Exclude<ServiceIntent, "none">, number> = {
+    vyaudit: 0,
+    ecommerce: 0,
+    integrations_api: 0,
+    marketing_digital: 0,
+    mobile_apps: 0,
+    web_landing: 0
+  };
+
+  scores.vyaudit += scoreSignals(text, [
+    "vyaudit",
+    "auditoria web",
+    "auditoria de sitio",
+    "seo tecnico",
+    "core web vitals",
+    "lighthouse",
+    "performance web",
+    "accesibilidad web",
+    "informe pdf"
+  ]);
+
+  scores.ecommerce += scoreSignals(text, [
+    "ecommerce",
+    "e-commerce",
+    "tienda online",
+    "carrito",
+    "carro de compras",
+    "checkout",
+    "catalogo",
+    "catalogo de productos",
+    "productos",
+    "comprar online"
+  ]);
+
+  scores.integrations_api += scoreSignals(text, [
+    "integracion",
+    "integraciones",
+    "crm",
+    "erp",
+    "webhook",
+    "sincronizacion",
+    "conectar sistemas",
+    "pasarela de pago",
+    "integrar pagos",
+    "automatizacion"
+  ]);
+  if (hasWord(text, "api") || hasWord(text, "apis")) {
+    scores.integrations_api += 2;
+  }
+
+  scores.marketing_digital += scoreSignals(text, [
+    "marketing digital",
+    "ads",
+    "meta ads",
+    "google ads",
+    "campanas",
+    "campa?as",
+    "trafico",
+    "contenido",
+    "redes sociales"
+  ]);
+
+  scores.mobile_apps += scoreSignals(text, [
+    "app movil",
+    "aplicacion movil",
+    "aplicacion mobile",
+    "app mobile",
+    "play store",
+    "app store"
+  ]);
+  scores.mobile_apps += scoreWordSignals(text, ["ios", "iphone", "apk", "android"]);
+  if (hasWord(text, "app")) {
+    scores.mobile_apps += 2;
+  }
+
+  scores.web_landing += scoreSignals(text, [
+    "landing",
+    "landing page",
+    "pagina web",
+    "sitio web",
+    "pagina corporativa",
+    "sitio corporativo",
+    "web corporativa",
+    "one page",
+    "ofrecer servicios",
+    "ofrecer mis servicios",
+    "web"
+  ]);
+
+  if (hasAny(text, ["mercado pago", "webpay"])) {
+    if (hasAny(text, ["carrito", "checkout", "tienda", "ecommerce", "catalogo", "productos"])) {
+      scores.ecommerce += 2;
+    }
+    if (hasAny(text, ["integrar", "integracion", "api", "webhook", "sistema"])) {
+      scores.integrations_api += 2;
+    }
+  }
+
+  if (hasAny(text, ["carrito de compras", "carro de compras"])) {
+    scores.ecommerce += 3;
+  }
+
+  const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+
+  if (!ranked[0] || ranked[0][1] <= 0) {
+    return "none";
+  }
+
+  return ranked[0][0] as ServiceIntent;
+};
+
+const isCorporateWebsiteIntent = (message: string): boolean => {
+  const text = normalize(message);
+  return hasAny(text, [
+    "sitio web corporativo",
+    "pagina corporativa",
+    "sitio corporativo",
+    "web corporativa",
+    "ofrecer servicios",
+    "ofrecer mis servicios",
+    "mostrar servicios",
+    "presentar servicios"
+  ]);
+};
+
+const isGenericWebsiteRequest = (message: string): boolean => {
+  const text = normalize(message);
+  const hasGenericWebSignal = hasAny(text, [
+    "pagina web",
+    "sitio web",
+    "crear una web",
+    "crear pagina",
+    "hacer una web",
+    "necesito una web",
+    "quiero una web",
+    "pagina para mi negocio",
+    "sitio para mi negocio"
+  ]) || hasWord(text, "web");
+
+  if (!hasGenericWebSignal) {
+    return false;
+  }
+
+  const hasSpecificSignal =
+    hasAny(text, [
+      "landing",
+      "landing page",
+      "sitio web corporativo",
+      "pagina corporativa",
+      "sitio corporativo",
+      "web corporativa",
+      "tienda online",
+      "ecommerce",
+      "e-commerce",
+      "carrito",
+      "checkout",
+      "catalogo",
+      "productos",
+      "integracion",
+      "integrar",
+      "webhook",
+      "crm",
+      "erp",
+      "mercado pago",
+      "webpay",
+      "app movil",
+      "aplicacion movil",
+      "marketing digital",
+      "ads",
+      "vyaudit",
+      "auditoria"
+    ]) ||
+    hasWord(text, "api") ||
+    hasWord(text, "android") ||
+    hasWord(text, "ios") ||
+    hasWord(text, "seo");
+
+  return !hasSpecificSignal;
 };
 
 const detectComplexity = (message: string): "baja" | "media" | "alta" => {
@@ -200,21 +379,37 @@ const detectComplexity = (message: string): "baja" | "media" | "alta" => {
 
 const parseBudgetClpFromText = (text: string): number | null => {
   const normalized = normalize(text);
+  const lines = normalized
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !line.includes("@"))
+    .filter((line) => !line.includes("whatsapp"))
+    .filter((line) => !line.includes("telefono"))
+    .filter((line) => !line.includes("tel:"));
 
-  const compact = normalized.match(/(?:\$\s*)?(\d{1,3}(?:[.\s]\d{3})+)/);
-  if (compact?.[1]) {
-    const digits = compact[1].replace(/[.\s]/g, "");
-    const value = Number(digits);
-    if (Number.isFinite(value) && value >= 100000) {
-      return value;
+  for (const line of lines) {
+    const mentionsMoney = hasAny(line, ["presupuesto", "clp", "peso", "pesos", "millon", "millones", "mil"]) || line.includes("$");
+
+    const compact = line.match(/(?:\$\s*)?(\d{1,3}(?:[.\s]\d{3})+)/);
+    if (compact?.[1]) {
+      const digits = compact[1].replace(/[.\s]/g, "");
+      const value = Number(digits);
+      if (Number.isFinite(value) && value >= 100000) {
+        return value;
+      }
     }
-  }
 
-  const long = normalized.match(/\b([1-9]\d{5,})\b/);
-  if (long?.[1]) {
-    const value = Number(long[1]);
-    if (Number.isFinite(value)) {
-      return value;
+    if (!mentionsMoney) {
+      continue;
+    }
+
+    const plainAmount = line.match(/\b([1-9]\d{5,7})\b/);
+    if (plainAmount?.[1]) {
+      const value = Number(plainAmount[1]);
+      if (Number.isFinite(value) && value >= 100000 && value <= 50000000) {
+        return value;
+      }
     }
   }
 
@@ -224,7 +419,7 @@ const parseBudgetClpFromText = (text: string): number | null => {
 const detectUrgencyMultiplier = (text: string): number => {
   const normalized = normalize(text);
 
-  if (hasAny(normalized, ["urgente", "asap", "hoy", "24h", "24 h", "mañana", "manana"])) {
+  if (hasAny(normalized, ["urgente", "asap", "hoy", "24h", "24 h", "manana", "mañana"])) {
     return 1.35;
   }
   if (/\b(1|un|una)\s+dia\b/.test(normalized) || /\b(2|3)\s+dias\b/.test(normalized)) {
@@ -240,114 +435,290 @@ const detectUrgencyMultiplier = (text: string): number => {
   return 1;
 };
 
-const estimateServicePrice = (entry: ServiceCatalogEntry, message: string, history?: ChatHistoryItem[]): string => {
-  if (typeof entry.fixedPriceClp === "number") {
-    return `Valor referencial: ${clp(entry.fixedPriceClp)} + IVA.`;
-  }
+type WebQuoteType = "landing_page" | "corporate_website";
 
-  if (typeof entry.minPriceClp !== "number" || typeof entry.maxPriceClp !== "number") {
-    return entry.priceNote;
-  }
-
-  const contextText = [
-    ...(history ?? []).filter((item) => item.role === "user").map((item) => item.text),
-    message
-  ].join("\n");
-
-  const complexity = detectComplexity(contextText);
-  const urgencyMultiplier = detectUrgencyMultiplier(contextText);
-  const budget = parseBudgetClpFromText(contextText);
-
-  const min = entry.minPriceClp;
-  const max = entry.maxPriceClp;
-  const span = max - min;
-
-  let baseMin = min;
-  let baseMax = min + span * 0.35;
-
-  if (complexity === "media") {
-    baseMin = min + span * 0.3;
-    baseMax = min + span * 0.7;
-  }
-
-  if (complexity === "alta") {
-    baseMin = min + span * 0.65;
-    baseMax = max;
-  }
-
-  // Recargo por prioridad: a menor plazo, mayor costo.
-  const cappedMax = Math.round(max * 1.25);
-  let adjustedMin = Math.round(baseMin * urgencyMultiplier);
-  let adjustedMax = Math.round(baseMax * urgencyMultiplier);
-
-  adjustedMin = Math.max(min, Math.min(adjustedMin, cappedMax));
-  adjustedMax = Math.max(adjustedMin, Math.min(adjustedMax, cappedMax));
-
-  if (budget && budget >= min && budget <= cappedMax) {
-    const spread = Math.max(Math.round(budget * 0.15), 120000);
-    adjustedMin = Math.max(min, budget - spread);
-    adjustedMax = Math.min(cappedMax, budget + spread);
-    if (adjustedMin > adjustedMax) {
-      adjustedMin = Math.max(min, adjustedMax - 120000);
-    }
-  }
-
-  const urgencyTag = urgencyMultiplier > 1 ? ", prioridad alta por plazo" : "";
-  const budgetTag = budget ? ` Presupuesto detectado: ${clp(budget)}.` : "";
-
-  return `Estimacion referencial personalizada (complejidad ${complexity}${urgencyTag}): ${clp(adjustedMin)} a ${clp(adjustedMax)} + IVA.${budgetTag}`;
+type ServiceQuoteResult = {
+  estimatedPrice: string;
+  totalClp: number | null;
+  lineItems: string[];
 };
 
-const estimateServiceTotalClp = (entry: ServiceCatalogEntry, message: string, history?: ChatHistoryItem[]): number | null => {
-  if (typeof entry.fixedPriceClp === "number") {
-    return entry.fixedPriceClp;
-  }
+const buildUserContextText = (message: string, history?: ChatHistoryItem[]): string =>
+  [...(history ?? []).filter((item) => item.role === "user").map((item) => item.text), message].join("\n");
 
-  if (typeof entry.minPriceClp !== "number" || typeof entry.maxPriceClp !== "number") {
+const roundQuoteClp = (value: number): number => Math.round(value / 10000) * 10000;
+
+const clampQuote = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+
+const parseInitialProductCount = (text: string): number | null => {
+  const normalized = normalize(text);
+  const match = normalized.match(/\b(\d{1,4})\s+(productos|producto|sku|items?)\b/);
+  if (!match?.[1]) {
     return null;
   }
 
-  const contextText = [
-    ...(history ?? []).filter((item) => item.role === "user").map((item) => item.text),
-    message
-  ].join("\n");
+  const value = Number(match[1]);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
 
+const countSignalsPresent = (text: string, signals: string[]): number => signals.filter((signal) => text.includes(signal)).length;
+
+const detectWebsiteQuoteType = (message: string, history?: ChatHistoryItem[]): WebQuoteType => {
+  const text = buildUserContextText(message, history);
+  const normalized = normalize(text);
+
+  if (hasAny(normalized, ["landing", "landing page", "captar leads", "conversion", "conversi", "reuniones"])) {
+    return "landing_page";
+  }
+
+  if (isCorporateWebsiteIntent(normalized)) {
+    return "corporate_website";
+  }
+
+  return "landing_page";
+};
+
+const buildRangeText = (totalClp: number, complexity: "baja" | "media" | "alta"): string => {
+  const spreadRatio = complexity === "alta" ? 0.15 : complexity === "media" ? 0.12 : 0.1;
+  const spread = Math.max(roundQuoteClp(totalClp * spreadRatio), 40000);
+  const rangeMin = Math.max(0, totalClp - spread);
+  const rangeMax = totalClp + spread;
+  return `${clp(rangeMin)} a ${clp(rangeMax)} + IVA`;
+};
+
+const buildLineItemSummary = (lineItems: string[]): string => {
+  if (lineItems.length === 0) {
+    return "";
+  }
+
+  return ` Desglose base: ${lineItems.join(", ")}.`;
+};
+
+const inferCommercialServiceLabel = (intent: ServiceIntent, message?: string, history?: ChatHistoryItem[]): string => {
+  switch (intent) {
+    case "web_landing":
+      return detectWebsiteQuoteType(message ?? "", history) === "corporate_website" ? "Sitio web corporativo" : "Landing page";
+    case "ecommerce":
+      return "E-commerce con carrito";
+    case "integrations_api":
+      return "Integraciones y APIs";
+    case "mobile_apps":
+      return "Aplicacion movil";
+    case "marketing_digital":
+      return "Marketing digital";
+    case "vyaudit":
+      return "VyAudit (auditoria web)";
+    default:
+      return "Servicio no definido";
+  }
+};
+
+const estimateServiceQuote = (
+  entry: ServiceCatalogEntry,
+  intent: Exclude<ServiceIntent, "none">,
+  message: string,
+  history?: ChatHistoryItem[]
+): ServiceQuoteResult => {
+  if (typeof entry.fixedPriceClp === "number") {
+    return {
+      estimatedPrice: `Valor referencial fijo: ${clp(entry.fixedPriceClp)} + IVA.`,
+      totalClp: entry.fixedPriceClp,
+      lineItems: [`Auditoria por dominio ${clp(entry.fixedPriceClp)}`]
+    };
+  }
+
+  const contextText = buildUserContextText(message, history);
+  const normalized = normalize(contextText);
   const complexity = detectComplexity(contextText);
   const urgencyMultiplier = detectUrgencyMultiplier(contextText);
   const budget = parseBudgetClpFromText(contextText);
+  const lineItems: string[] = [];
 
-  const min = entry.minPriceClp;
-  const max = entry.maxPriceClp;
-  const span = max - min;
+  let subtotal = 0;
+  const addLineItem = (label: string, amount: number) => {
+    if (amount <= 0) {
+      return;
+    }
 
-  let baseMin = min;
-  let baseMax = min + span * 0.35;
+    const roundedAmount = roundQuoteClp(amount);
+    subtotal += roundedAmount;
+    lineItems.push(`${label} ${clp(roundedAmount)}`);
+  };
 
-  if (complexity === "media") {
-    baseMin = min + span * 0.3;
-    baseMax = min + span * 0.7;
+  if (intent === "web_landing") {
+    const websiteType = detectWebsiteQuoteType(message, history);
+
+    if (websiteType === "landing_page") {
+      addLineItem("Landing base", LANDING_PRICE_BASE_CLP);
+      if (hasAny(normalized, ["ventas", "captar leads", "lead", "conversion", "conversi", "reuniones"])) {
+        addLineItem("Setup estrategico", LANDING_PRICE_SETUP_CLP);
+      }
+      if (hasAny(normalized, ["productos", "catalogo", "servicios", "beneficios"])) {
+        addLineItem("Secciones comerciales", 60000);
+      }
+      if (complexity === "media") {
+        addLineItem("Ajuste de complejidad media", 80000);
+      }
+      if (complexity === "alta") {
+        addLineItem("Ajuste de complejidad alta", 160000);
+      }
+    } else {
+      addLineItem("Sitio corporativo base", WEBSITE_MIN_CLP);
+      if (hasAny(normalized, ["servicio", "servicios", "empresa", "corporativo", "nosotros", "quienes somos"])) {
+        addLineItem("Arquitectura comercial de servicios", 90000);
+      }
+      if (hasAny(normalized, ["contacto", "formulario", "lead", "reuniones"])) {
+        addLineItem("Captacion y formularios", 70000);
+      }
+      if (hasAny(normalized, ["productos", "catalogo", "portafolio", "casos de exito"])) {
+        addLineItem("Seccion catalogo o portafolio", 120000);
+      }
+      if (complexity === "media") {
+        addLineItem("Ajuste de complejidad media", 150000);
+      }
+      if (complexity === "alta") {
+        addLineItem("Ajuste de complejidad alta", 320000);
+      }
+    }
   }
 
-  if (complexity === "alta") {
-    baseMin = min + span * 0.65;
-    baseMax = max;
+  if (intent === "ecommerce") {
+    addLineItem("E-commerce base", ECOMMERCE_MIN_CLP);
+    const productCount = parseInitialProductCount(contextText);
+    if (productCount && productCount <= 10) {
+      addLineItem("Configuracion de catalogo inicial", 70000);
+    }
+    if (productCount && productCount > 10 && productCount <= 50) {
+      addLineItem("Catalogo medio", 180000);
+    }
+    if (productCount && productCount > 50) {
+      addLineItem("Catalogo amplio", 450000);
+    }
+
+    const paymentGateways = countSignalsPresent(normalized, ["mercado pago", "webpay", "stripe", "paypal", "flow", "khipu"]);
+    if (paymentGateways > 0) {
+      addLineItem("Integracion de medio de pago", 250000);
+      if (paymentGateways > 1) {
+        addLineItem("Medio de pago adicional", 100000 * (paymentGateways - 1));
+      }
+    }
+    if (hasAny(normalized, ["stock", "inventario", "pedido", "pedidos"])) {
+      addLineItem("Gestion operativa", 180000);
+    }
+    if (complexity === "media") {
+      addLineItem("Ajuste de complejidad media", 220000);
+    }
+    if (complexity === "alta") {
+      addLineItem("Ajuste de complejidad alta", 520000);
+    }
   }
 
-  const cappedMax = Math.round(max * 1.25);
-  let adjustedMin = Math.round(baseMin * urgencyMultiplier);
-  let adjustedMax = Math.round(baseMax * urgencyMultiplier);
-
-  adjustedMin = Math.max(min, Math.min(adjustedMin, cappedMax));
-  adjustedMax = Math.max(adjustedMin, Math.min(adjustedMax, cappedMax));
-
-  if (budget && budget >= min && budget <= cappedMax) {
-    return budget;
+  if (intent === "integrations_api") {
+    addLineItem("Integracion base", INTEGRATION_API_MIN_CLP);
+    const extraSystems = countSignalsPresent(normalized, ["crm", "erp", "ecommerce", "tienda", "pasarela", "mercado pago", "webpay"]);
+    if (extraSystems > 1) {
+      addLineItem("Sistemas adicionales", 180000 * (extraSystems - 1));
+    }
+    if (hasAny(normalized, ["webhook", "tiempo real", "real time", "sincronizacion"])) {
+      addLineItem("Sincronizacion en tiempo real", 180000);
+    }
+    if (hasAny(normalized, ["dashboard", "reportes", "reporteria"])) {
+      addLineItem("Tablero o reporteria", 120000);
+    }
+    if (complexity === "media") {
+      addLineItem("Ajuste de complejidad media", 180000);
+    }
+    if (complexity === "alta") {
+      addLineItem("Ajuste de complejidad alta", 500000);
+    }
   }
 
-  return Math.round((adjustedMin + adjustedMax) / 2);
+  if (intent === "mobile_apps") {
+    addLineItem("Aplicacion movil base", MOBILE_APP_MIN_CLP);
+    if (hasAny(normalized, ["vender", "venta online", "productos", "catalogo", "carrito", "checkout"])) {
+      addLineItem("Modulo comercial o catalogo", 450000);
+    }
+    if (hasAny(normalized, ["mercado pago", "webpay", "stripe", "pasarela", "suscripcion"])) {
+      addLineItem("Pagos o monetizacion", 280000);
+    }
+    if (hasAny(normalized, ["dashboard", "admin", "panel", "backoffice"])) {
+      addLineItem("Panel de gestion", 250000);
+    }
+    if (complexity === "media") {
+      addLineItem("Ajuste de complejidad media", 550000);
+    }
+    if (complexity === "alta") {
+      addLineItem("Ajuste de complejidad alta", 1600000);
+    }
+  }
+
+  if (intent === "marketing_digital") {
+    let monthlyPlan = MARKETING_MEDIUM_CLP;
+    if (budget && budget <= MARKETING_BASIC_CLP) {
+      monthlyPlan = MARKETING_BASIC_CLP;
+    } else if (budget && budget >= MARKETING_ADVANCED_CLP) {
+      monthlyPlan = MARKETING_ADVANCED_CLP;
+    } else if (hasAny(normalized, ["ventas", "ads", "google ads", "meta ads", "ecommerce"])) {
+      monthlyPlan = MARKETING_ADVANCED_CLP;
+    }
+
+    addLineItem("Plan mensual recomendado", monthlyPlan);
+    if (!budget) {
+      addLineItem("Diagnostico inicial", MARKETING_DIAGNOSTIC_CLP);
+    }
+  }
+
+  if (subtotal <= 0) {
+    if (typeof entry.minPriceClp === "number") {
+      subtotal = entry.minPriceClp;
+    } else {
+      return { estimatedPrice: entry.priceNote, totalClp: null, lineItems: [] };
+    }
+  }
+
+  const urgencyCharge = urgencyMultiplier > 1 ? roundQuoteClp(subtotal * (urgencyMultiplier - 1)) : 0;
+  if (urgencyCharge > 0) {
+    subtotal += urgencyCharge;
+    lineItems.push(`Prioridad por plazo ${clp(urgencyCharge)}`);
+  }
+
+  const entryMin = entry.minPriceClp ?? subtotal;
+  const entryCap = entry.maxPriceClp ? Math.round(entry.maxPriceClp * 1.15) : subtotal;
+  let totalClp = clampQuote(roundQuoteClp(subtotal), entryMin, Math.max(entryCap, entryMin));
+
+  if (budget && budget >= entryMin * 0.7 && budget <= Math.max(entryCap, entryMin)) {
+    totalClp = roundQuoteClp(totalClp * 0.75 + budget * 0.25);
+  }
+
+  const range = buildRangeText(totalClp, complexity);
+  const urgencyTag = urgencyMultiplier > 1 ? ", con prioridad por plazo" : "";
+
+  return {
+    totalClp,
+    estimatedPrice: `Estimacion afinada segun alcance conversado (complejidad ${complexity}${urgencyTag}): ${range}.${buildLineItemSummary(lineItems)}`,
+    lineItems
+  };
 };
-const formatCatalogReply = (entry: ServiceCatalogEntry, message: string, history?: ChatHistoryItem[]): string =>
-  `${entry.title}: ${entry.offer}\n${estimateServicePrice(entry, message, history)}\n${entry.priceNote}\nPregunta clave: ${entry.qualifierQuestion}\n${entry.cta}`;
+
+const estimateServicePrice = (entry: ServiceCatalogEntry, intent: Exclude<ServiceIntent, "none">, message: string, history?: ChatHistoryItem[]): string =>
+  estimateServiceQuote(entry, intent, message, history).estimatedPrice;
+
+const estimateServiceTotalClp = (
+  entry: ServiceCatalogEntry,
+  intent: Exclude<ServiceIntent, "none">,
+  message: string,
+  history?: ChatHistoryItem[]
+): number | null => estimateServiceQuote(entry, intent, message, history).totalClp;
+
+const formatCatalogReply = (
+  entry: ServiceCatalogEntry,
+  intent: Exclude<ServiceIntent, "none">,
+  message: string,
+  history?: ChatHistoryItem[]
+): string => {
+  const commercialLabel = inferCommercialServiceLabel(intent, message, history);
+  return `${commercialLabel}: ${entry.offer}\n${estimateServicePrice(entry, intent, message, history)}\n${entry.priceNote}\nPregunta clave: ${entry.qualifierQuestion}\n${entry.cta}`;
+};
 
 const inferServiceIntentFromContext = (message: string, history?: ChatHistoryItem[]): ServiceIntent => {
   const direct = detectServiceIntent(message);
@@ -413,24 +784,8 @@ const extractCommercialData = (message: string, history?: ChatHistoryItem[]): Co
   };
 };
 
-const inferServiceLabel = (intent: ServiceIntent): string => {
-  switch (intent) {
-    case "web_landing":
-      return "Sitio web / landing";
-    case "ecommerce":
-      return "E-commerce con carrito";
-    case "integrations_api":
-      return "Integraciones & APIs";
-    case "mobile_apps":
-      return "App movil";
-    case "marketing_digital":
-      return "Marketing digital";
-    case "vyaudit":
-      return "VyAudit (auditoria web)";
-    default:
-      return "Servicio no definido";
-  }
-};
+const inferServiceLabel = (intent: ServiceIntent, message?: string, history?: ChatHistoryItem[]): string =>
+  inferCommercialServiceLabel(intent, message, history);
 
 const alreadyCapturedInHistory = (history?: ChatHistoryItem[]): boolean => {
   if (!history || history.length === 0) {
@@ -534,17 +889,16 @@ const persistProposalHandoff = async (params: {
 }): Promise<void> => {
   const id = crypto.randomUUID();
   const resolvedIntent = resolveServiceIntentForHandoff(params.serviceIntent, params.history);
-  const serviceLabel = inferServiceLabel(resolvedIntent);
+  const joinedUserText = (params.history ?? [])
+    .filter((h) => h.role === "user")
+    .map((h) => h.text)
+    .join("\n");
+  const serviceLabel = inferServiceLabel(resolvedIntent, joinedUserText || "", params.history);
 
   const userTurns = (params.history ?? [])
     .filter((h) => h.role === "user")
     .slice(-6)
     .map((h) => `- ${h.text}`)
-    .join("\n");
-
-  const joinedUserText = (params.history ?? [])
-    .filter((h) => h.role === "user")
-    .map((h) => h.text)
     .join("\n");
 
   const budgetDetected = parseBudgetClpFromText(joinedUserText);
@@ -600,14 +954,14 @@ const persistProposalHandoff = async (params: {
   }
 
   const catalog = SERVICE_CATALOG[resolvedIntent];
-  const estimatedPrice = estimateServicePrice(catalog, joinedUserText || message, params.history);
-  const totalClp = estimateServiceTotalClp(catalog, joinedUserText || message, params.history);
+  const estimatedPrice = estimateServicePrice(catalog, resolvedIntent, joinedUserText || message, params.history);
+  const totalClp = estimateServiceTotalClp(catalog, resolvedIntent, joinedUserText || message, params.history);
   const totalEstimate = totalClp ? `${clp(totalClp)} + IVA` : undefined;
   const clientSummary = [
     `Servicio recomendado: ${serviceLabel}.`,
-    timelineDetected ? `Plazo detectado: ${timelineDetected}.` : "Plazo: por confirmar.",
-    budgetDetected ? `Presupuesto detectado: ${clp(budgetDetected)}.` : "Presupuesto: por confirmar.",
-    "Esta propuesta es referencial y se ajusta al alcance final."
+    timelineDetected ? `Plazo conversado: ${timelineDetected}.` : "Plazo: por confirmar.",
+    budgetDetected ? `Presupuesto conversado: ${clp(budgetDetected)}.` : "Presupuesto: por confirmar.",
+    "Esta propuesta es referencial y se ajusta al alcance final confirmado en kickoff."
   ].join("\n");
 
   const clientMail = await sendClientProposalEmail({
@@ -629,7 +983,7 @@ const serviceFollowUpReply = (
   history?: ChatHistoryItem[]
 ): string | null => {
   const data = extractCommercialData(message, history);
-  const intro = formatCatalogReply(SERVICE_CATALOG[serviceIntent], message, history);
+  const intro = formatCatalogReply(SERVICE_CATALOG[serviceIntent], serviceIntent, message, history);
   const fullText = normalize([...(history ?? []).map((h) => h.text), message].join("\n"));
 
   if (serviceIntent === "web_landing") {
@@ -693,47 +1047,16 @@ const detectExplicitAgent = (message: string): AgentName | undefined => {
     return "support";
   }
 
-  if (
-    hasAny(text, [
-      "propuesta",
-      "cotiz",
-      "presupuesto",
-      "precio",
-      "plan",
-      "oferta",
-      "ecommerce",
-      "e-commerce",
-      "carrito",
-      "checkout",
-      "integracion",
-      "integración",
-      "api",
-      "apis",
-      "vyaudit",
-      "auditoria web",
-      "auditoría web",
-      "marketing digital",
-      "app movil",
-      "aplicacion movil",
-      "aplicación móvil"
-    ])
-  ) {
+  const intent = detectServiceIntent(message);
+  if (intent === "web_landing") {
+    return isCorporateWebsiteIntent(message) ? "proposal" : "landing";
+  }
+  if (["ecommerce", "integrations_api", "marketing_digital", "mobile_apps", "vyaudit"].includes(intent)) {
     return "proposal";
   }
 
-  if (
-    hasAny(text, [
-      "landing",
-      "landing page",
-      "pagina web",
-      "sitio web",
-      "web",
-      "captacion",
-      "embudo",
-      "cta"
-    ])
-  ) {
-    return "landing";
+  if (hasAny(text, ["propuesta", "cotiz", "presupuesto", "precio", "plan", "oferta"])) {
+    return "proposal";
   }
 
   if (hasAny(text, ["ejecutivo", "asesor", "comercial", "lead", "leads", "clientes", "ventas", "prospectos"])) {
@@ -759,6 +1082,10 @@ const chooseAgent = (message: string, requested: "auto" | AgentName, current: Ag
   }
 
   if (current === "lead") {
+    return explicit;
+  }
+
+  if (current === "landing" && explicit !== "landing") {
     return explicit;
   }
 
@@ -865,6 +1192,11 @@ const updateLandingStateFromMessage = (message: string, state: ReturnType<typeof
     state.paymentMethod = maybeAfterColon(message);
   }
 
+  const parsedBudget = parseBudgetClpFromText(message);
+  if (parsedBudget) {
+    state.budget = clp(parsedBudget);
+  }
+
   const email = extractEmail(message);
   if (email) {
     state.contactEmail = email;
@@ -876,20 +1208,52 @@ const updateLandingStateFromMessage = (message: string, state: ReturnType<typeof
   }
 };
 
-const landingFlowReply = (message: string, session: ReturnType<typeof getOrCreateChatSession>): string => {
+const landingFlowReply = (
+  message: string,
+  session: ReturnType<typeof getOrCreateChatSession>,
+  history?: ChatHistoryItem[]
+): string => {
   const state = session.landing;
+
+  if (
+    !state.goal &&
+    !state.audience &&
+    !state.offer &&
+    !state.timeline &&
+    !state.focus &&
+    !state.quoteSent &&
+    isGenericWebsiteRequest(message)
+  ) {
+    return "Te ayudo. Para orientarte bien, dime cual de estas opciones se parece mas a lo que necesitas: landing para vender/captar leads, sitio web corporativo para mostrar servicios, ecommerce con carrito o integracion de pagos/API.";
+  }
+
   updateLandingStateFromMessage(message, state);
 
   if (state.completed) {
+    if (isThanks(message)) {
+      return "Gracias a ti. Quedo todo registrado y hoy te contactamos por correo y WhatsApp para iniciar el kickoff.";
+    }
     if (isAffirmative(message)) {
       return "Perfecto, quedo todo confirmado. En breve te contactamos para iniciar kickoff y mockup.";
     }
     return "Ya tengo todos tus datos y el inicio quedo confirmado. Si quieres, te comparto el resumen final del brief.";
   }
 
-  if (state.kickoffRequested && (state.contactEmail || state.contactPhone)) {
+  if (state.kickoffRequested && state.contactEmail && state.contactPhone) {
+    if (!state.handoffSent) {
+      state.handoffSent = true;
+      void persistProposalHandoff({
+        email: state.contactEmail,
+        phone: state.contactPhone,
+        serviceIntent: "web_landing",
+        history
+      }).catch((error) => {
+        console.error("[AI CHAT] landing handoff persistence failed", error);
+      });
+    }
+
     state.completed = true;
-    return "Perfecto, datos recibidos. Ya dejamos agendado el kickoff. Te enviaremos confirmacion por correo o WhatsApp y empezamos con mockup y estructura final.";
+    return "Perfecto, datos recibidos. Ya dejamos agendado el kickoff. Te enviaremos confirmacion por correo y WhatsApp y empezamos con mockup y estructura final.";
   }
 
   if (state.briefClosed && isAffirmative(message)) {
@@ -917,9 +1281,13 @@ const landingFlowReply = (message: string, session: ReturnType<typeof getOrCreat
     return "Excelente. Quieres enfocarla en conversion o en calificacion de leads?";
   }
 
+  if (!state.budget) {
+    return "Perfecto. Para ajustar la propuesta y dejar una estimacion mas realista, cual es tu presupuesto estimado?";
+  }
+
   if (!state.quoteSent) {
     state.quoteSent = true;
-    return `Perfecto. Ya tengo objetivo, publico, oferta y plazo.\n\nEstimacion referencial:\n- Landing page: desde ${clp(LANDING_PRICE_BASE_CLP)} + IVA\n- Setup estrategico (opcional): ${clp(LANDING_PRICE_SETUP_CLP)} + IVA\n\nSi quieres, te preparo el brief + propuesta en el siguiente mensaje.`;
+    return `Perfecto. Ya tengo objetivo, publico, oferta, plazo y presupuesto.\n\nEstimacion referencial:\n- Landing page: desde ${clp(LANDING_PRICE_BASE_CLP)} + IVA\n- Setup estrategico (opcional): ${clp(LANDING_PRICE_SETUP_CLP)} + IVA\n\nSi quieres, te preparo el brief + propuesta en el siguiente mensaje.`;
   }
 
   if (state.quoteSent && !state.briefSent) {
@@ -942,7 +1310,7 @@ const landingFlowReply = (message: string, session: ReturnType<typeof getOrCreat
     }
 
     state.briefClosed = true;
-    return "Excelente, brief cerrado. Resumen confirmado: marca, referencia visual, medio de pago y enfoque. Quieres que lo dejemos listo para iniciar hoy?";
+    return "Excelente, brief cerrado. Resumen confirmado: marca, referencia visual, medio de pago, enfoque y presupuesto. Quieres que lo dejemos listo para iniciar hoy?";
   }
 
   return "Quieres que lo dejemos listo para iniciar hoy?";
@@ -990,7 +1358,7 @@ const deterministicReply = (agent: AgentName, message: string, history?: ChatHis
     if (followUp) {
       return followUp;
     }
-    return formatCatalogReply(SERVICE_CATALOG[serviceIntent], message, history);
+    return formatCatalogReply(SERVICE_CATALOG[serviceIntent], serviceIntent, message, history);
   }
 
   if (hasAny(text, ["presupuesto", "cotiz", "precio", "cuanto cuesta", "cuánto cuesta"])) {
@@ -1051,6 +1419,23 @@ export async function POST(req: NextRequest) {
   }
 
   const requestedAgent = parsed.data.agent;
+
+  if (
+    requestedAgent === "auto" &&
+    isGenericWebsiteRequest(parsed.data.message) &&
+    (session.currentAgent === "lead" || startsNewIntent(parsed.data.message))
+  ) {
+    resetLandingFlow(session);
+    session.currentAgent = "lead";
+    saveChatSession(session);
+    return NextResponse.json({
+      success: true,
+      sessionId: session.id,
+      agent: "lead",
+      reply: "Te ayudo. Para orientarte bien, dime cual de estas opciones se parece mas a lo que necesitas: landing para vender/captar leads, sitio web corporativo para mostrar servicios, ecommerce con carrito o integracion de pagos/API."
+    });
+  }
+
   const chosenAgent = chooseAgent(parsed.data.message, requestedAgent, session.currentAgent);
 
   if (chosenAgent !== session.currentAgent) {
@@ -1061,7 +1446,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (chosenAgent === "landing") {
-    const reply = landingFlowReply(parsed.data.message, session);
+    const reply = landingFlowReply(parsed.data.message, session, parsed.data.history);
     saveChatSession(session);
 
     return NextResponse.json({
@@ -1119,6 +1504,17 @@ export async function POST(req: NextRequest) {
     runId: runResult.data.runId
   });
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 

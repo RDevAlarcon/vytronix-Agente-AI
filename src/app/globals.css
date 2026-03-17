@@ -1,4 +1,4 @@
-﻿@import "tailwindcss";
+@import "../../node_modules/tailwindcss/index.css";
 
 :root {
   /* Base palette (Option 1) */
@@ -104,6 +104,7 @@ body > * {
 }
 
 /* Logo helpers */
+
 
 
 
